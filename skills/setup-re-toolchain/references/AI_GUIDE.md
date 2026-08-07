@@ -45,25 +45,32 @@ $py = "D:\app\scoop\apps\anaconda3\current\App\python.exe"
 判断标准：`& $py -c "import scapy,frida,cv2,torch;print('OK')"` 无报错
 避坑：若用系统 `python`（uv 托管）会报 `externally-managed-environment`。**一定用 anaconda3 的解释器，或先 `uv venv` 再装。**
 
-## 阶段 4：Cheat Engine MCP 服务器
+## 阶段 4：Cheat Engine MCP 服务器（插件内已 vendor，无需克隆）
+
+本插件已在 `server/` 内打包了 CE MCP 服务器源码。只需创建 venv 并安装依赖：
 
 ```powershell
-git clone --depth 1 https://github.com/bethington/cheat-engine-server-python D:\app\scoop\apps\ce-mcp-server
-cd D:\app\scoop\apps\ce-mcp-server
-uv venv .venv
-uv pip install --python .venv\Scripts\python.exe "mcp>=1.0.0,<2.0.0" trio psutil capstone
+# 插件根（PLUGIN_ROOT）
+$root = Resolve-Path "..\..\..\.."   # 从 references/ 到插件根
+uv venv "$root\.venv"
+uv pip install --python "$root\.venv\Scripts\python.exe" "mcp>=1.0.0,<2.0.0" trio psutil capstone
+# 或直接执行一键脚本：
+# powershell -ExecutionPolicy Bypass -File "$root\skills\setup-re-toolchain\scripts\setup.ps1"
 ```
 
 **避坑（关键）**：
 - `mcp>=1.0.0` 会装成 2.0，但 2.0 移除了 `mcp.server.fastmcp`，启动必崩。**必须锁定 `<2.0.0`**。
-- 该项目 CLI 没有 `--test` 参数（README 有误）。验证用 `test-mcp.ps1`。
+- 服务器通过插件启动器 `bin\ce-mcp.cmd` 运行，读取插件 `.venv`；也可直接用 `.venv\Scripts\python.exe server\server\main.py --read-only`。
+- 该项目 CLI 没有 `--test` 参数（README 有误）。验证用 `scripts\test-mcp.ps1` 或 `scripts\test-mcp.py`。
 - 该实现只有进程管理 + Cheat Table 解析（约 26 个工具），**无内存读写**。
 
 ## 阶段 5：MCP 配置
 
-将 `opencode.mcp.json` 的 `cheat-engine` 段合并进 `~/.config/opencode/opencode.json` 的 `mcp` 对象（若该文件存在 idalib/burp，保留它们）。
+本插件自带标准 `mcp.json`（`cheat-engine`，stdio → `bin\ce-mcp.cmd`），兼容 Agent Plugins 的客户端会自动发现，无需手改。手动配置 opencode：
 
 ```powershell
+# 把下面这段合并进 ~/.config/opencode/opencode.json 的 "mcp" 对象（若该文件存在 idalib/burp，保留它们）
+# "cheat-engine": { "type": "local", "command": ["<插件根>/bin/ce-mcp.cmd"], "enabled": true }
 # 改完必须重启 opencode，配置不热加载
 ```
 
@@ -75,7 +82,7 @@ uv pip install --python .venv\Scripts\python.exe "mcp>=1.0.0,<2.0.0" trio psutil
 
 | 工具 | 命令 | 预期 |
 |---|---|---|
-| Cheat Engine | `.\test-mcp.ps1` | 26 个工具列表 + list_processes 有响应 |
+| Cheat Engine | `scripts\test-mcp.ps1`（或 `scripts\test-mcp.py`） | 初始化 OK + 26 个工具列表 + list_processes 有响应 |
 | YARA | 写规则扫 notepad.exe | 命中 MZ_Header |
 | Ghidra | `support\analyzeHeadless.bat` 导入 exe | 生成 .gpr 项目 |
 | DynamoRIO | `bin64\drrun.exe -c samples\bin64\bbcount.dll -- bin64\dummy.exe` | 输出 "Client bbcount is running" |
@@ -93,6 +100,8 @@ uv pip install --python .venv\Scripts\python.exe "mcp>=1.0.0,<2.0.0" trio psutil
 | `unable to load Npcap (wpcap.dll)` | 缺 Npcap | 装 Npcap（官网） |
 | `flag provided but not defined: -http-port` | Grafana 参数格式 | 用 `--configOverrides` / `--homepath` |
 | `scoop search` 报 GitHub rate limit | API 限流 | `Get-ChildItem D:\app\scoop\buckets\*\bucket\*<名>*` 或 `scoop config gh_token` |
+| MCP 启动器报 `no python with mcp` | 插件 `.venv` 未创建或 python 无 mcp | 运行 setup.ps1，或 `uv venv <插件根>\.venv` + 安装 `mcp>=1.0.0,<2.0.0` |
+| 客户端 MCP 连不上 | 插件目录路径含空格/中文 | 用 `CE_MCP_PYTHON` 环境变量显式指定 venv python 绝对路径 |
 
 ## 研究边界（务必遵守）
 

@@ -1,6 +1,8 @@
-# RE 工具链一键安装 + MCP 接入
+﻿# RE 工具链一键安装 + MCP 接入
 # 用法（管理员 PowerShell）: powershell -ExecutionPolicy Bypass -File setup.ps1
+# 本脚本位于 plugin: skills/setup-re-toolchain/scripts/，服务器源码在 plugin 根 server/
 $ErrorActionPreference = "Continue"
+$PLUGIN_ROOT = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
 $APP_SCOOP = "$env:USERPROFILE\scoop"
 if (Test-Path "D:\app\scoop") { $APP_SCOOP = "D:\app\scoop" }
 $LOG = Join-Path $PSScriptRoot "setup.log"
@@ -51,18 +53,20 @@ if (Test-Path $pyExe) {
     & $pyExe -m pip install torch --index-url https://download.pytorch.org/whl/cpu 2>&1 | Select-String -Pattern "Successfully installed|error" | ForEach-Object { Log "    $_" }
 } else { Log "WARN 未找到 anaconda python, 跳过 pip 安装" }
 
-# ---------- 4. Cheat Engine MCP 服务器 ----------
+# ---------- 4. Cheat Engine MCP 服务器（插件内已 vendor，无需克隆） ----------
 Log "==> Cheat Engine MCP 服务器"
-$ceMcpDir = "$APP_SCOOP\apps\ce-mcp-server"
-if (-not (Test-Path "$ceMcpDir\server\main.py")) {
-    git clone --depth 1 https://github.com/bethington/cheat-engine-server-python $ceMcpDir 2>&1 | Out-Null
-    if (Test-Path "$ceMcpDir") {
-        # 重要：mcp 2.0 移除了 fastmcp，必须锁定 1.x
-        uv venv "$ceMcpDir\.venv" 2>&1 | Out-Null
-        uv pip install --python "$ceMcpDir\.venv\Scripts\python.exe" "mcp>=1.0.0,<2.0.0" trio psutil capstone 2>&1 | Out-Null
-        Log "CE MCP 服务器已部署到 $ceMcpDir"
-    } else { Log "ERROR CE MCP clone 失败" }
-} else { Log "SKIP CE MCP (已存在)" }
+$ceMcpDir = Join-Path $PLUGIN_ROOT "server"
+$ceVenv = Join-Path $PLUGIN_ROOT ".venv"
+if (-not (Test-Path "$ceVenv\Scripts\python.exe")) {
+    if (-not (Get-Command uv -ErrorAction SilentlyContinue)) { Log "WARN 未找到 uv，尝试用 python -m venv 代替"; & "$pyExe" -m venv $ceVenv 2>&1 | Out-Null }
+    else { uv venv $ceVenv 2>&1 | Out-Null }
+    # 重要：mcp 2.0 移除了 fastmcp，必须锁定 1.x
+    if (Test-Path "$ceVenv\Scripts\python.exe") {
+        & "$ceVenv\Scripts\python.exe" -m pip install --upgrade pip 2>&1 | Out-Null
+        & "$ceVenv\Scripts\python.exe" -m pip install "mcp>=1.0.0,<2.0.0" trio psutil capstone 2>&1 | Select-String -Pattern "Successfully installed|error" | ForEach-Object { Log "    $_" }
+        Log "CE MCP venv 就绪: $ceVenv（服务器源码: $ceMcpDir）"
+    } else { Log "ERROR CE MCP venv 创建失败" }
+} else { Log "SKIP CE MCP venv (已存在)" }
 
 # ---------- 5. Npcap（Wireshark 抓包依赖，可选） ----------
 Log "==> Npcap"
@@ -72,15 +76,12 @@ if (-not (Get-Service -Name npcap -ErrorAction SilentlyContinue)) {
 
 # ---------- 6. MCP 配置写入 ----------
 Log "==> 写入 MCP 配置"
+$launcher = "$($PLUGIN_ROOT -replace '\\','/')/bin/ce-mcp.cmd"
 $ceCmd = @"
 {
   "cheat-engine": {
     "type": "local",
-    "command": [
-      "$($ceMcpDir -replace '\\','/')/.venv/Scripts/python.exe",
-      "$($ceMcpDir -replace '\\','/')/server/main.py",
-      "--read-only"
-    ],
+    "command": ["$launcher"],
     "enabled": true
   }
 }
@@ -89,17 +90,17 @@ $oc = "$env:USERPROFILE\.config\opencode\opencode.json"
 if (Test-Path $oc) {
     $cfg = Get-Content $oc -Raw | ConvertFrom-Json
     if (-not $cfg.mcp."cheat-engine") {
-        $cfg.mcp | Add-Member -NotePropertyName "cheat-engine" -NotePropertyValue @{ type="local"; command=@("$($ceMcpDir -replace '\\','/')/.venv/Scripts/python.exe","$($ceMcpDir -replace '\\','/')/server/main.py","--read-only"); enabled=$true }
+        $cfg.mcp | Add-Member -NotePropertyName "cheat-engine" -NotePropertyValue @{ type="local"; command=@($launcher); enabled=$true }
         $cfg | ConvertTo-Json -Depth 10 | Set-Content $oc -Encoding UTF8
         Log "已写入 opencode.json (需重启 opencode 生效)"
     } else { Log "SKIP opencode.json (cheat-engine 已配置)" }
-} else { Log "WARN 未找到 opencode.json，跳过（手动配置见 opencode.mcp.json）" }
+} else { Log "WARN 未找到 opencode.json，跳过（插件 mcp.json 会被 Agent Plugins 客户端自动发现）" }
 
 # ---------- 7. 验证 ----------
 Log "==> 验证工具版本"
 foreach ($v in @(@("yara","--version"), @("gdb","--version"), @("tshark","--version"))) {
     $cmd = $v[0]; try { $o = & $cmd @($v[1]) 2>&1 | Select-Object -First 1; Log "    $cmd : $o" } catch { Log "    $cmd : FAIL" }
 }
-$pyExe -c "import scapy, frida, cv2, torch; print('scapy',scapy.__version__,'| frida',frida.__version__,'| cv2',cv2.__version__,'| torch',torch.__version__)" 2>&1 | ForEach-Object { Log "    python: $_" }
+if ($pyExe -and (Test-Path $pyExe)) { & $pyExe -c "import scapy, frida, cv2, torch; print('scapy',scapy.__version__,'| frida',frida.__version__,'| cv2',cv2.__version__,'| torch',torch.__version__)" 2>&1 | ForEach-Object { Log "    python: $_" } } else { Log "    跳过 python 版本检查（无 anaconda python）" }
 
-Log "==> 完成。下一步: 重启 opencode，运行 .\test-mcp.ps1 验证 MCP 连通"
+Log "==> 完成。下一步: 重启 opencode，运行 scripts\test-mcp.ps1 验证 MCP 连通"

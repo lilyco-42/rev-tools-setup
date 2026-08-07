@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "cheat-engine": {
+      "type": "stdio",
+      "command": "./bin/ce-mcp.cmd",
+      "args": [],
+      "env": {
+        "CE_MCP_PYTHON": "${PLUGIN_DATA}/.venv/Scripts/python.exe"
+      },
+      "cwd": "${PLUGIN_ROOT}"
+    }
+  }
+}

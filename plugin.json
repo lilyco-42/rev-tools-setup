@@ -1,0 +1,37 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "rev-tools-setup",
+  "version": "1.0.0",
+  "description": "One-click setup of a Windows reverse-engineering toolchain (scoop: Cheat Engine, x64dbg, Ghidra, DynamoRIO, YARA, Wireshark, Prometheus...) plus a portable Cheat Engine MCP server, with an agent skill and pitfalls guide.",
+  "author": {
+    "name": "lilyco-42",
+    "email": "liuqingffffff@gmail.com",
+    "url": "https://github.com/lilyco-42"
+  },
+  "homepage": "https://github.com/lilyco-42/rev-tools-setup",
+  "repository": "https://github.com/lilyco-42/rev-tools-setup",
+  "license": "MIT",
+  "keywords": [
+    "reverse-engineering",
+    "cheat-engine",
+    "mcp",
+    "scoop",
+    "security-research",
+    "game-hacking",
+    "re-toolchain",
+    "windows"
+  ],
+  "extensions": {
+    "com.opencode": {
+      "mcp": {
+        "cheat-engine": {
+          "type": "local",
+          "command": [
+            "${PLUGIN_ROOT}/bin/ce-mcp.cmd"
+          ],
+          "enabled": true
+        }
+      }
+    }
+  }
+}
