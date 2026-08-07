@@ -7,6 +7,9 @@ __pycache__/
 setup.log
 *.log
 
+# CE MCP runtime cwd artifacts
+/process_whitelist.json
+
 # OS
 Thumbs.db
 Desktop.ini
